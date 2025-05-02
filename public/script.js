@@ -180,7 +180,7 @@ function connectSignalingServer() {
 
     console.log("Connecting to signaling server...");
     // Use { transports: ['websocket'] } if you encounter polling issues behind proxies etc.
-    socket = io('https://webrtc-signal-server-1qal.onrender.com'); // forceNew ensures a fresh connection
+    socket = io({ forceNew: true }); // forceNew ensures a fresh connection
     setupSocketListeners();
 }
 
