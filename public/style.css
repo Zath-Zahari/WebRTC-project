@@ -1,0 +1,381 @@
+/* General Styles */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #202124; /* Dark background */
+    color: #e8eaed; /* Light text */
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden; /* Prevent body scroll */
+}
+
+h1, h3 {
+    text-align: center;
+}
+
+button {
+    cursor: pointer;
+    border-radius: 4px;
+    border: none;
+    padding: 10px 15px;
+    font-size: 1em;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+button:active {
+    transform: scale(0.98);
+}
+
+input[type="text"] {
+     padding: 10px 12px; /* Slightly larger padding */
+     border-radius: 4px;
+     border: 1px solid #5f6368;
+     background-color: #3c4043;
+     color: #e8eaed;
+     margin: 0 5px;
+     font-size: 1em; /* Match button */
+}
+
+/* Entry Section (Reverted) */
+#entry-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-grow: 1;
+    padding: 20px;
+}
+#entry-section h1 {
+     color: #e8eaed;
+     margin-bottom: 30px;
+}
+#join-controls {
+    display: flex;
+    align-items: center; /* Align items vertically */
+    flex-wrap: wrap; /* Allow wrapping on smaller screens if needed */
+    justify-content: center; /* Center items */
+    margin-bottom: 15px;
+}
+/* Style for both input fields */
+#join-controls input[type="text"] {
+     padding: 10px 12px;
+     border-radius: 4px;
+     border: 1px solid #5f6368;
+     background-color: #3c4043;
+     color: #e8eaed;
+     margin: 5px; /* Add some margin */
+     font-size: 1em;
+     min-width: 180px; /* Ensure decent width */
+}
+#joinBtn {
+    background-color: #8ab4f8; /* Google Blue */
+    color: #202124;
+    padding: 10px 20px; /* Match input height */
+    font-size: 1em;
+    margin: 5px; /* Add some margin */
+}
+#joinBtn:hover {
+    background-color: #a1c5ff;
+}
+#entry-section p {
+    color: #9aa0a6; /* Lighter grey text */
+    font-size: 0.9em;
+    margin-top: 10px; /* Add space above help text */
+    text-align: center; /* Center help text */
+}
+
+
+/* Call Section - Main Layout */
+#call-section {
+    display: flex;
+    flex-direction: column;
+    height: 100%; /* Fill viewport */
+    position: relative; /* For chat sidebar positioning */
+    overflow: hidden; /* Prevent overflow */
+}
+#call-section.hidden {
+    display: none;
+}
+
+/* Video Grid (Adjusted Size) */
+#videos-grid {
+    flex-grow: 1; /* Take available space */
+    display: grid;
+    gap: 15px; /* Slightly larger gap */
+    padding: 15px; /* More padding around grid */
+    overflow-y: auto; /* Allow scrolling if many videos */
+    /* === Video Size Adjustment === */
+    /* Fit as many columns as possible with a MIN size of 200px and MAX of 350px */
+    grid-template-columns: repeat(auto-fit, minmax(200px, 350px));
+    /* === End Adjustment === */
+    grid-auto-rows: minmax(150px, auto); /* Minimum row height */
+    justify-content: center; /* Center grid items if they don't fill the row */
+    align-content: start; /* Start placing items from the top */
+    background-color: #202124; /* Match body */
+}
+
+.video-wrapper {
+    position: relative; /* For positioning info overlay */
+    background-color: #3c4043; /* Darker grey */
+    border-radius: 8px;
+    overflow: hidden; /* Clip video corners */
+    display: flex; /* Use flex for centering placeholder */
+    align-items: center;
+    justify-content: center;
+    min-height: 150px; /* Consistent minimum height based on grid-auto-rows */
+    /* === Add Aspect Ratio (optional but good) === */
+    aspect-ratio: 16 / 9; /* Enforce a widescreen aspect ratio */
+    /* === End Aspect Ratio === */
+
+}
+
+.video-wrapper video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Cover the area, might crop */
+    transition: opacity 0.3s ease;
+}
+
+/* Placeholder for when video is off */
+.video-off-placeholder {
+    font-size: 3em; /* Adjusted size */
+    color: #9aa0a6;
+}
+.video-wrapper video.hidden {
+    opacity: 0; /* Hide video smoothly */
+    position: absolute; /* Remove from layout flow */
+}
+
+
+/* Video Info Overlay */
+.video-info {
+    position: absolute;
+    bottom: 5px;
+    left: 5px;
+    background-color: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.9em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 10;
+}
+
+.participant-name {
+    font-weight: 500;
+    max-width: 150px; /* Prevent very long names from overflowing */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.status-icons i {
+    font-size: 0.9em;
+    width: 1.5em; /* Ensure consistent spacing */
+    text-align: center;
+}
+
+/* Icon Colors */
+.icon-mic-on { color: #e8eaed; }
+.icon-mic-off { color: #ea4335; } /* Red */
+.icon-cam-on { color: #e8eaed; }
+.icon-cam-off { color: #ea4335; } /* Red */
+
+
+/* Controls Bar */
+#controls-bar {
+    background-color: #202124; /* Match body */
+    padding: 15px 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    flex-shrink: 0; /* Prevent bar from shrinking */
+    border-top: 1px solid #3c4043;
+    position: relative; /* For room name display */
+}
+
+/* Room Name Display */
+.room-display {
+    position: absolute;
+    left: 20px; /* Position on the left */
+    color: #9aa0a6;
+    font-size: 0.9em;
+}
+
+.control-button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: #3c4043; /* Default button color */
+    color: #e8eaed;
+    border-radius: 50%; /* Circular buttons */
+    width: 56px;
+    height: 56px;
+    font-size: 0.7em; /* Smaller text */
+    border: none;
+    padding: 0;
+}
+.control-button i {
+    font-size: 1.4em; /* Icon size */
+    margin-bottom: 4px;
+}
+.control-button:hover {
+    background-color: #5f6368;
+}
+
+/* Specific Button Colors & Styles */
+.mute-button {
+    background-color: #8ab4f8; /* Blue */
+    color: #202124; /* Dark text on blue */
+}
+.mute-button.muted {
+    background-color: #ea4335; /* Red when muted */
+    color: #fff; /* White text on red */
+}
+.mute-button:hover {
+    background-color: #a1c5ff; /* Lighter blue */
+}
+.mute-button.muted:hover {
+    background-color: #f28b82; /* Lighter red */
+}
+
+
+.camera-button {
+    background-color: #3c4043; /* White/Grey */
+    color: #e8eaed;
+}
+.camera-button.video-off {
+     background-color: #ea4335; /* Red when video off */
+     color: #fff; /* White text on red */
+}
+.camera-button:hover {
+     background-color: #5f6368;
+}
+ .camera-button.video-off:hover {
+     background-color: #f28b82; /* Lighter red */
+ }
+
+
+.leave-button {
+    background-color: #ea4335; /* Red */
+    color: #fff;
+}
+.leave-button:hover {
+    background-color: #f28b82; /* Lighter red */
+}
+
+.chat-toggle-button {
+     background-color: #3c4043;
+     color: #e8eaed;
+}
+.chat-toggle-button:hover {
+     background-color: #5f6368;
+}
+
+
+/* Chat Sidebar */
+#chat-sidebar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 300px; /* Fixed width */
+    height: calc(100% - 87px); /* Full height minus controls bar */
+    background-color: #2d2e30;
+    border-left: 1px solid #3c4043;
+    display: flex;
+    flex-direction: column;
+    transition: transform 0.3s ease-in-out;
+    transform: translateX(100%); /* Start hidden */
+    z-index: 100;
+}
+#chat-sidebar.visible {
+    transform: translateX(0);
+}
+#chat-sidebar.hidden {
+    transform: translateX(100%);
+}
+
+#chat-sidebar h3 {
+     padding: 15px;
+     margin: 0;
+     border-bottom: 1px solid #3c4043;
+     flex-shrink: 0;
+     position: relative;
+}
+
+.close-chat-button {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: none;
+    border: none;
+    color: #9aa0a6;
+    font-size: 1.5em;
+    line-height: 1;
+    padding: 0 5px;
+}
+.close-chat-button:hover {
+    color: #e8eaed;
+}
+
+
+#chatbox {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 10px;
+}
+
+#chatbox p {
+    margin: 0.5em 0;
+    font-size: 0.9em;
+    word-wrap: break-word;
+    line-height: 1.4;
+    max-width: 100%;
+}
+
+#chatbox .my-message {
+    text-align: right;
+    color: #8ab4f8; /* Blue for own messages */
+}
+#chatbox .other-message {
+    text-align: left;
+    color: #e8eaed;
+}
+#chatbox .system {
+    text-align: center;
+    font-style: italic;
+    color: #9aa0a6; /* Grey for system messages */
+    font-size: 0.8em;
+}
+
+#chat-input {
+    display: flex;
+    padding: 10px;
+    border-top: 1px solid #3c4043;
+    flex-shrink: 0;
+}
+
+#messageInput {
+    flex-grow: 1;
+    margin-right: 5px;
+}
+
+#sendBtn {
+    background-color: #8ab4f8;
+    color: #202124;
+    padding: 8px 12px;
+}
+#sendBtn:hover {
+    background-color: #a1c5ff;
+}
+#sendBtn:disabled {
+    background-color: #5f6368;
+    cursor: not-allowed;
+}
