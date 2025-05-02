@@ -31,7 +31,7 @@
                     <span class="participant-name" id="localParticipantName">You</span>
                     <span class="status-icons">
                         <i id="local-mic-icon" class="fas fa-microphone icon-mic-on"></i>
-                        <i id="local-cam-icon" class="fas fa-video icon-cam-on"></i>
+                        <i id="local-cam-icon" class="fas fa-video icon-cam-on" style="display: none;"></i>
                     </span>
                 </div>
             </div>
@@ -40,32 +40,18 @@
 
         <!-- Controls Bar -->
         <div id="controls-bar">
-            <button id="muteBtn" class="control-button mute-button" title="Mute/Unmute">
-                <i class="fas fa-microphone"></i>
-                <span>Mute</span>
-            </button>
-            <button id="cameraBtn" class="control-button camera-button" title="Turn Camera On/Off">
-                 <i class="fas fa-video"></i>
-                 <span>Cam Off</span>
-            </button>
-            <button id="leaveBtn" class="control-button leave-button" title="Leave Meeting">
-                <i class="fas fa-phone-slash"></i>
-                <span>Leave</span>
-            </button>
-            <button id="toggleChatBtn" class="control-button chat-toggle-button" title="Toggle Chat">
-                <i class="fas fa-comments"></i>
-                <span>Chat</span>
-            </button>
-             <span id="currentRoomDisplay" class="room-display"></span> <!-- Display current room name -->
+            <button id="muteBtn" class="control-button mute-button" title="Mute/Unmute"><i class="fas fa-microphone"></i><span>Mute</span></button>
+            <button id="cameraBtn" class="control-button camera-button" title="Turn Camera On/Off"><i class="fas fa-video"></i><span>Cam Off</span></button>
+            <button id="leaveBtn" class="control-button leave-button" title="Leave Meeting"><i class="fas fa-phone-slash"></i><span>Leave</span></button>
+            <button id="toggleChatBtn" class="control-button chat-toggle-button" title="Toggle Chat"><i class="fas fa-comments"></i><span>Chat</span></button>
+             <span id="currentRoomDisplay" class="room-display"></span>
         </div>
 
         <!-- Chat Sidebar -->
         <div id="chat-sidebar" class="hidden">
              <h3>Chat</h3>
              <button id="closeChatBtn" class="close-chat-button">×</button>
-            <div id="chatbox">
-                <!-- Messages will appear here -->
-            </div>
+            <div id="chatbox"></div>
             <div id="chat-input">
                 <input type="text" id="messageInput" placeholder="Type message..." disabled>
                 <button id="sendBtn" disabled>Send</button>
@@ -73,7 +59,7 @@
         </div>
     </div>
 
-    <!-- === Socket.IO Client Library (Using CDN with CORRECTED Integrity Hash) === -->
+    <!-- === Socket.IO Client Library (Using CDN - Integrity check removed) === -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
     <!-- === Your script needs to be AFTER the library === -->
     <script src="script.js"></script>
