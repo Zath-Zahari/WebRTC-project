@@ -34,6 +34,14 @@ io.on('connection', (socket) => {
             rooms[roomName] = {};
         }
 
+        // Prevent duplicate joins if user refreshes quickly or has connection issues
+        if (rooms[roomName][socket.id]) {
+            console.warn(`User ${userName} (${socket.id}) attempted to join room ${roomName} again.`);
+            // Optionally, you could just update the name if it changed, or simply ignore
+            // For simplicity, we'll allow rejoining logic to proceed which might reset state if needed
+        }
+
+
         rooms[roomName][socket.id] = { muted: false, videoOff: false, name: userName };
         socketToRoom[socket.id] = roomName;
         socket.join(roomName);
@@ -49,10 +57,19 @@ io.on('connection', (socket) => {
 
         // --- Signaling ---
         console.log(`Emitting existing_peers to ${socket.id}`);
+        // Send full peer info including status and name
         socket.emit('existing_peers', otherPeersInRoom);
 
         console.log(`Broadcasting user_joined to room ${roomName}, sender: ${socket.id} (${userName})`);
-        socket.to(roomName).emit('user_joined', { peerId: socket.id, userName: userName });
+        // Broadcast new user's info to others
+        socket.to(roomName).emit('user_joined', {
+            peerId: socket.id,
+            userName: userName,
+            status: { // Send initial status
+                 muted: rooms[roomName][socket.id].muted,
+                 videoOff: rooms[roomName][socket.id].videoOff
+            }
+        });
 
         // --- Relay signaling messages ---
         socket.on('offer', (payload) => {
@@ -70,26 +87,36 @@ io.on('connection', (socket) => {
         });
 
         socket.on('ice_candidate', (payload) => {
-            io.to(payload.target).emit('ice_candidate', {
-                candidate: payload.candidate,
-                sender: socket.id,
-            });
+             // Add a check to prevent sending to self if target === socket.id by mistake
+             if (payload.target !== socket.id) {
+                io.to(payload.target).emit('ice_candidate', {
+                    candidate: payload.candidate,
+                    sender: socket.id,
+                });
+             }
         });
 
         // --- Status Updates ---
         socket.on('update_status', (statusUpdate) => {
             const currentRoom = socketToRoom[socket.id];
             if (currentRoom && rooms[currentRoom] && rooms[currentRoom][socket.id]) {
-                if (statusUpdate.muted !== undefined) {
+                let updated = false;
+                if (statusUpdate.muted !== undefined && rooms[currentRoom][socket.id].muted !== statusUpdate.muted) {
                     rooms[currentRoom][socket.id].muted = statusUpdate.muted;
+                    updated = true;
                 }
-                if (statusUpdate.videoOff !== undefined) {
+                if (statusUpdate.videoOff !== undefined && rooms[currentRoom][socket.id].videoOff !== statusUpdate.videoOff) {
                      rooms[currentRoom][socket.id].videoOff = statusUpdate.videoOff;
+                     updated = true;
                 }
-                socket.to(currentRoom).emit('peer_status_update', {
-                    peerId: socket.id,
-                    status: statusUpdate
-                });
+
+                // Only broadcast if there was an actual change
+                if(updated) {
+                    socket.to(currentRoom).emit('peer_status_update', {
+                        peerId: socket.id,
+                        status: statusUpdate // Send only the changes
+                    });
+                }
             }
         });
 
@@ -98,12 +125,16 @@ io.on('connection', (socket) => {
            const currentRoom = socketToRoom[socket.id];
            if (currentRoom && rooms[currentRoom] && rooms[currentRoom][socket.id]) {
                 const senderName = rooms[currentRoom][socket.id].name;
-                console.log(`Chat from ${senderName} in ${currentRoom}: ${String(message).substring(0, 50)}...`);
-                io.to(currentRoom).emit('chat_message', {
-                    senderId: socket.id,
-                    senderName: senderName,
-                    message: message
-                });
+                // Basic sanitization or validation could be added here
+                const cleanMessage = String(message).trim();
+                if (cleanMessage) { // Don't send empty messages
+                    console.log(`Chat from ${senderName} in ${currentRoom}: ${cleanMessage.substring(0, 50)}...`);
+                    io.to(currentRoom).emit('chat_message', {
+                        senderId: socket.id,
+                        senderName: senderName,
+                        message: cleanMessage // Send the cleaned message
+                    });
+                }
            }
        });
 
@@ -113,16 +144,30 @@ io.on('connection', (socket) => {
             if (roomName && rooms[roomName] && rooms[roomName][socket.id]) {
                 const leavingUserName = rooms[roomName][socket.id].name;
                 console.log(`User ${leavingUserName} (${socket.id}) disconnected/left room ${roomName}. Reason: ${reason}`);
-                delete rooms[roomName][socket.id];
-                socket.to(roomName).emit('user_left', socket.id);
+                delete rooms[roomName][socket.id]; // Remove user from room structure
+                delete socketToRoom[socket.id]; // Remove from socket->room mapping
+
+                socket.leave(roomName); // Ensure socket leaves the room
+                socket.to(roomName).emit('user_left', socket.id); // Notify others
+
+                // Check if room is empty after user leaves
                 if (Object.keys(rooms[roomName]).length === 0) {
                     console.log(`Room ${roomName} is now empty. Deleting.`);
                     delete rooms[roomName];
                 }
             } else {
-                 console.log(`User ${socket.id} disconnected (was not in a tracked room). Reason: ${reason}`);
+                 // This might happen if disconnect occurs before join_room completes or after leaving
+                 console.log(`User ${socket.id} disconnected (was not in a tracked room or already left). Reason: ${reason}`);
             }
-            delete socketToRoom[socket.id];
+            // Clean up specific listeners for this socket to prevent memory leaks
+            socket.removeAllListeners('offer');
+            socket.removeAllListeners('answer');
+            socket.removeAllListeners('ice_candidate');
+            socket.removeAllListeners('update_status');
+            socket.removeAllListeners('chat_message');
+            socket.removeAllListeners('leave_room');
+            socket.removeAllListeners('disconnect');
+            // Note: 'error' listener might be kept or handled globally if needed
         };
 
         socket.on('leave_room', () => handleDisconnect('explicit leave request'));
@@ -131,12 +176,15 @@ io.on('connection', (socket) => {
 
      socket.on('error', (error) => {
         console.error(`Socket error for ${socket.id}:`, error);
+        // Consider disconnecting the socket on certain errors
+        // handleDisconnect('socket error'); // Example: Force cleanup on error
     });
 
 });
 
-// Fallback route
+// Fallback route for client-side routing (if used) or serving index.html
 app.get('*', (req, res) => {
+  // Make sure the path is correct based on your static folder setup
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 

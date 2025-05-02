@@ -8,15 +8,16 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- === Entry Section (Added Name Input) === -->
+    <!-- === Entry Section === -->
     <div id="entry-section">
         <h1>WebRTC Video Conference</h1>
         <div id="join-controls">
-            <input type="text" id="nameInput" placeholder="Enter Your Name">
-            <input type="text" id="roomInput" placeholder="Enter Room Name">
+            <input type="text" id="nameInput" placeholder="Enter Your Name" required>
+            <input type="text" id="roomInput" placeholder="Enter Room Name" required>
             <button id="joinBtn">Join Room</button>
         </div>
-         <p>Enter your name and the same room name as others to connect.</p>
+         <p id="entry-instructions">Enter your name and the same room name as others to connect.</p>
+         <p id="entry-error" class="error-message hidden"></p> <!-- For displaying entry errors -->
     </div>
     <!-- === End Entry Section === -->
 
@@ -26,12 +27,14 @@
              <!-- Local video wrapper -->
             <div class="video-wrapper" id="local-video-wrapper">
                 <video id="localVideo" autoplay muted playsinline></video>
+                 <div class="video-off-placeholder hidden">
+                     <i class="fas fa-user-slash"></i> <!-- Placeholder when local cam is off -->
+                 </div>
                 <div class="video-info">
-                    <!-- === Participant name span (will be updated by JS) === -->
                     <span class="participant-name" id="localParticipantName">You</span>
                     <span class="status-icons">
                         <i id="local-mic-icon" class="fas fa-microphone icon-mic-on"></i>
-                        <i id="local-cam-icon" class="fas fa-video icon-cam-on" style="display: none;"></i>
+                        <i id="local-cam-icon" class="fas fa-video icon-cam-on"></i>
                     </span>
                 </div>
             </div>
@@ -40,18 +43,32 @@
 
         <!-- Controls Bar -->
         <div id="controls-bar">
-            <button id="muteBtn" class="control-button mute-button" title="Mute/Unmute"><i class="fas fa-microphone"></i><span>Mute</span></button>
-            <button id="cameraBtn" class="control-button camera-button" title="Turn Camera On/Off"><i class="fas fa-video"></i><span>Cam Off</span></button>
-            <button id="leaveBtn" class="control-button leave-button" title="Leave Meeting"><i class="fas fa-phone-slash"></i><span>Leave</span></button>
-            <button id="toggleChatBtn" class="control-button chat-toggle-button" title="Toggle Chat"><i class="fas fa-comments"></i><span>Chat</span></button>
-             <span id="currentRoomDisplay" class="room-display"></span>
+            <button id="muteBtn" class="control-button mute-button" title="Mute/Unmute" disabled>
+                <i class="fas fa-microphone"></i>
+                <span>Mute</span>
+            </button>
+            <button id="cameraBtn" class="control-button camera-button" title="Turn Camera On/Off" disabled>
+                 <i class="fas fa-video"></i>
+                 <span>Cam Off</span>
+            </button>
+            <button id="leaveBtn" class="control-button leave-button" title="Leave Meeting" disabled>
+                <i class="fas fa-phone-slash"></i>
+                <span>Leave</span>
+            </button>
+            <button id="toggleChatBtn" class="control-button chat-toggle-button" title="Toggle Chat" disabled>
+                <i class="fas fa-comments"></i>
+                <span>Chat</span>
+            </button>
+             <span id="currentRoomDisplay" class="room-display"></span> <!-- Display current room name -->
         </div>
 
         <!-- Chat Sidebar -->
         <div id="chat-sidebar" class="hidden">
              <h3>Chat</h3>
-             <button id="closeChatBtn" class="close-chat-button">×</button>
-            <div id="chatbox"></div>
+             <button id="closeChatBtn" class="close-chat-button" title="Close Chat">×</button>
+            <div id="chatbox">
+                <!-- Messages will appear here -->
+            </div>
             <div id="chat-input">
                 <input type="text" id="messageInput" placeholder="Type message..." disabled>
                 <button id="sendBtn" disabled>Send</button>
@@ -59,9 +76,9 @@
         </div>
     </div>
 
-    <!-- === Socket.IO Client Library (Using CDN - Integrity check removed) === -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
-    <!-- === Your script needs to be AFTER the library === -->
+    <!-- Socket.IO Client Library -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- Main application script -->
     <script src="script.js"></script>
 </body>
 </html>
