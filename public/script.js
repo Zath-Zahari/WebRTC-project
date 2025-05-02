@@ -112,7 +112,7 @@ function connectSignalingServer() {
     if (socket && socket.connected) return;
     if (socket) socket.disconnect();
 
-    socket = io();
+    socket = io('https://webrtc-signal-server-88gq.onrender.com');
     setupSocketListeners();
 }
 
