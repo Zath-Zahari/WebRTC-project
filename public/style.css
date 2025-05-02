@@ -117,40 +117,52 @@ input[type="text"] {
 }
 
 .video-wrapper {
-    position: relative; /* For positioning info overlay */
-    background-color: #3c4043; /* Darker grey */
+    position: relative; /* Crucial for absolute positioning of children */
+    background-color: #3c4043;
     border-radius: 8px;
-    overflow: hidden; /* Clip video corners */
-    display: flex; /* Use flex for centering placeholder */
+    overflow: hidden;
+    display: flex; /* Keep flex for initial centering if needed, but children are absolute */
     align-items: center;
     justify-content: center;
-    min-height: 150px; /* Consistent minimum height based on grid-auto-rows */
-    /* === Add Aspect Ratio (optional but good) === */
-    aspect-ratio: 16 / 9; /* Enforce a widescreen aspect ratio */
-    /* === End Aspect Ratio === */
+    min-height: 120px;
+    aspect-ratio: 16 / 9;
+}
 
+.video-wrapper video,
+.video-off-placeholder {
+    /* Position both video and placeholder absolutely to overlap */
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex; /* Needed to center icon inside placeholder */
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.3s ease; /* Keep transition for video */
 }
 
 .video-wrapper video {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover; /* Cover the area, might crop */
-    transition: opacity 0.3s ease;
+    object-fit: cover; /* Video specific style */
+    background-color: #202124; /* Background while loading */
+    z-index: 5; /* Video slightly above placeholder if both accidentally visible */
 }
 
-/* Placeholder for when video is off */
+/* Placeholder Icon Style */
 .video-off-placeholder {
-    font-size: 3em; /* Adjusted size */
+    font-size: 3em;
     color: #9aa0a6;
+    background-color: #3c4043; /* Match wrapper background */
+    z-index: 1; /* Below video */
 }
-.video-wrapper video.hidden {
-    opacity: 0; /* Hide video smoothly */
-    position: absolute; /* Remove from layout flow */
+
+/* Use display: none for hiding to ensure elements don't affect layout */
+.hidden {
+    display: none !important; /* Use !important to override other display properties if needed */
 }
 
 
-/* Video Info Overlay */
+/* Video Info Overlay (Ensure it's above video/placeholder) */
 .video-info {
     position: absolute;
     bottom: 5px;
@@ -163,7 +175,7 @@ input[type="text"] {
     display: flex;
     align-items: center;
     gap: 8px;
-    z-index: 10;
+    z-index: 10; /* Above video and placeholder */
 }
 
 .participant-name {

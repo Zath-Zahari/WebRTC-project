@@ -11,6 +11,7 @@ const localVideo = document.getElementById('localVideo');
 const localParticipantNameSpan = document.getElementById('localParticipantName'); // Get local name span
 const localMicIcon = document.getElementById('local-mic-icon');
 const localCamIcon = document.getElementById('local-cam-icon');
+const localPlaceholder = document.getElementById('localPlaceholder'); // Get local placeholder
 
 const controlsBar = document.getElementById('controls-bar');
 const muteBtn = document.getElementById('muteBtn');
@@ -84,8 +85,8 @@ async function joinRoom(roomId) {
         // 1. Get Local Media
         localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         localVideo.srcObject = localStream;
-        localParticipantNameSpan.textContent = `${localUserName} (You)`; // Set local name display
-        updateLocalStatusIcons();
+        localParticipantNameSpan.textContent = `${localUserName} (You)`;
+        updateLocalStatusIcons(); // Update icons AND placeholder based on initial state
         console.log("Local stream obtained");
 
         // 2. Connect to Signaling Server
@@ -112,7 +113,9 @@ function connectSignalingServer() {
     if (socket && socket.connected) return;
     if (socket) socket.disconnect();
 
-    socket = io('https://webrtc-signal-server-88gq.onrender.com');
+    // Connect to the deployed backend server URL
+    // Replace with your actual Render Web Service URL if different
+    socket = io('https://webrtc-signal-server.onrender.com');
     setupSocketListeners();
 }
 
@@ -161,7 +164,9 @@ function setupSocketListeners() {
                 peerNames[peerId] = peerInfo.name;
                 console.log(`Stored name for existing peer ${peerId}: ${peerInfo.name}`);
                 createPeerConnection(peerId, true);
-                setTimeout(() => updatePeerStatusIcons(peerId, peerInfo.muted, peerInfo.videoOff), 100);
+                // Update UI immediately for existing peers based on status received
+                // Use setTimeout slightly delay to increase chance elements exist before update
+                setTimeout(() => updatePeerStatusIcons(peerId, peerInfo.muted, peerInfo.videoOff), 150);
             }
         });
     });
@@ -175,7 +180,7 @@ function setupSocketListeners() {
             createPeerConnection(peerId, false);
             addChatMessage(`${userName} joined`, 'system');
         } else {
-            console.log(`Peer connection already exists for ${peerId}, skipping creation.`);
+            console.log(`Peer connection already exists for ${peerId}, updating name if needed.`);
              if (!peerNames[peerId]) peerNames[peerId] = userName;
              const elements = peerMediaElements[peerId];
              if (elements && elements.nameSpan) {
@@ -199,7 +204,6 @@ function setupSocketListeners() {
     });
 
     socket.on('peer_status_update', ({ peerId, status }) => {
-         // console.log(`Status update received from ${peerNames[peerId] || peerId}:`, status); // Can be verbose
         updatePeerStatusIcons(peerId, status.muted, status.videoOff);
     });
 
@@ -211,14 +215,12 @@ function setupSocketListeners() {
         addChatMessage(`${leavingUserName} left`, 'system');
     });
 
-    // === Refined chat message handler ===
+    // Refined chat message handler
     socket.on('chat_message', (data) => { // data is { senderId, senderName, message }
-        // Add chat message only if it's not from the local user
         if (data.senderId !== socket.id) {
             console.log(`Chat message received from ${data.senderName} (${data.senderId}): ${data.message}`);
             addChatMessage(`${data.senderName}: ${data.message}`, 'other-message', data.senderId);
         }
-        // We already added the local user's message instantly in sendMessage
     });
 
     socket.on('disconnect', (reason) => {
@@ -256,7 +258,7 @@ function createPeerConnection(peerId, isInitiator) {
         return;
     }
 
-    createPeerVideoElement(peerId, peerName);
+    createPeerVideoElement(peerId, peerName); // Create UI first
 
     const peerConnection = new RTCPeerConnection(configuration);
     peerConnections[peerId] = peerConnection;
@@ -278,6 +280,12 @@ function createPeerConnection(peerId, isInitiator) {
         const elements = peerMediaElements[peerId];
         if (elements && elements.video) {
              elements.video.srcObject = event.streams[0];
+             // Ensure placeholder is hidden when track is received
+             if (elements.placeholder) {
+                 elements.placeholder.classList.add('hidden');
+             }
+             elements.video.classList.remove('hidden');
+
         } else {
             console.warn(`Video element for peer ${peerId} not found when track received.`);
         }
@@ -294,7 +302,7 @@ function createPeerConnection(peerId, isInitiator) {
         console.log(`ICE connection state for ${peerName} (${peerId}): ${state}`);
         if (['failed', 'disconnected', 'closed'].includes(state)) {
              console.warn(`Connection issue with ${peerId}. State: ${state}. Cleaning up.`);
-             handleUserLeft(peerId);
+             handleUserLeft(peerId); // Clean up proactively
         }
     };
 
@@ -366,18 +374,9 @@ function handleAnswer(sdp, senderId) {
 async function handleIceCandidate(candidate, senderId) {
     const peerConnection = peerConnections[senderId];
     const peerName = peerNames[senderId] || senderId;
-     if (!peerConnection) {
-        // console.warn(`No PC for ${peerName} to handle ICE candidate. Ignoring.`); // Can be noisy
-        return;
-    }
-    if (peerConnection.signalingState === 'closed') {
-        // console.warn(`PC for ${peerName} is closed. Ignoring ICE candidate.`); // Can be noisy
-        return;
-    }
-    if (!candidate) {
-        // console.log(`End of candidates signal received from ${peerName}`); // Can be noisy
-        return;
-    }
+     if (!peerConnection) return;
+    if (peerConnection.signalingState === 'closed') return;
+    if (!candidate) return; // End of candidates signal
 
     try {
         await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
@@ -402,6 +401,10 @@ function createPeerVideoElement(peerId, peerName) {
     video.autoplay = true;
     video.playsInline = true;
 
+    const placeholder = document.createElement('div'); // Create placeholder dynamically
+    placeholder.className = 'video-off-placeholder hidden'; // Start hidden
+    placeholder.innerHTML = '<i class="fas fa-user-slash"></i>';
+
     const infoDiv = document.createElement('div');
     infoDiv.className = 'video-info';
 
@@ -421,26 +424,24 @@ function createPeerVideoElement(peerId, peerName) {
     camIcon.id = `cam-${peerId}`;
     camIcon.className = 'fas fa-video icon-cam-on';
 
-    const placeholder = document.createElement('div');
-    placeholder.className = 'video-off-placeholder hidden';
-    placeholder.innerHTML = '<i class="fas fa-user-slash"></i>';
-
     iconsSpan.appendChild(micIcon);
     iconsSpan.appendChild(camIcon);
     infoDiv.appendChild(nameSpan);
     infoDiv.appendChild(iconsSpan);
 
     wrapper.appendChild(video);
-    wrapper.appendChild(placeholder);
+    wrapper.appendChild(placeholder); // Add placeholder
     wrapper.appendChild(infoDiv);
     videosGrid.appendChild(wrapper);
 
+    // Store reference to all elements including the dynamically created placeholder
     peerMediaElements[peerId] = { video, micIcon, camIcon, wrapper, placeholder, nameSpan };
 }
 
 function updateLocalStatusIcons() {
-    if (!localStream) return;
+    if (!localStream) return; // Ensure stream exists
 
+    // Mute Button/Icon
     if (isMuted) {
         localMicIcon.className = 'fas fa-microphone-slash icon-mic-off';
         muteBtn.classList.add('muted');
@@ -453,15 +454,18 @@ function updateLocalStatusIcons() {
         muteBtn.querySelector('i').className = 'fas fa-microphone';
     }
 
+    // Camera Button/Icon and Local Placeholder Visibility
     if (isCameraOff) {
         localCamIcon.className = 'fas fa-video-slash icon-cam-off';
-        localVideo.classList.add('hidden');
+        localVideo.classList.add('hidden'); // Hide video element
+        if (localPlaceholder) localPlaceholder.classList.remove('hidden'); // Show placeholder
         cameraBtn.classList.add('video-off');
         cameraBtn.querySelector('span').textContent = 'Cam On';
         cameraBtn.querySelector('i').className = 'fas fa-video-slash';
     } else {
         localCamIcon.className = 'fas fa-video icon-cam-on';
-        localVideo.classList.remove('hidden');
+        localVideo.classList.remove('hidden'); // Show video element
+        if (localPlaceholder) localPlaceholder.classList.add('hidden'); // Hide placeholder
         cameraBtn.classList.remove('video-off');
         cameraBtn.querySelector('span').textContent = 'Cam Off';
         cameraBtn.querySelector('i').className = 'fas fa-video';
@@ -470,25 +474,34 @@ function updateLocalStatusIcons() {
 
 function updatePeerStatusIcons(peerId, isPeerMuted, isPeerVideoOff) {
     const elements = peerMediaElements[peerId];
-    if (!elements) return;
+    if (!elements) return; // Elements might not be ready yet
 
+    // Update Mic Icon
     if (isPeerMuted !== undefined) {
          elements.micIcon.className = isPeerMuted
             ? 'fas fa-microphone-slash icon-mic-off'
             : 'fas fa-microphone icon-mic-on';
     }
 
+    // Update Cam Icon and Video/Placeholder Visibility
      if (isPeerVideoOff !== undefined) {
          elements.camIcon.className = isPeerVideoOff
             ? 'fas fa-video-slash icon-cam-off'
             : 'fas fa-video icon-cam-on';
 
-         if (isPeerVideoOff) {
-             elements.video.classList.add('hidden');
-             elements.placeholder.classList.remove('hidden');
+         // Ensure elements.placeholder exists before accessing classList
+         if (elements.placeholder) {
+             if (isPeerVideoOff) {
+                 elements.video.classList.add('hidden');
+                 elements.placeholder.classList.remove('hidden');
+             } else {
+                 elements.video.classList.remove('hidden');
+                 elements.placeholder.classList.add('hidden');
+             }
          } else {
-             elements.video.classList.remove('hidden');
-             elements.placeholder.classList.add('hidden');
+             // Fallback if placeholder wasn't created/found - just hide/show video
+             elements.video.style.display = isPeerVideoOff ? 'none' : 'block';
+             console.warn("Placeholder element missing for peer:", peerId);
          }
      }
 }
@@ -509,14 +522,14 @@ cameraBtn.onclick = () => {
     isCameraOff = !isCameraOff;
     localStream.getVideoTracks().forEach(track => track.enabled = !isCameraOff);
     console.log(`Video ${!isCameraOff ? 'ENABLED' : 'DISABLED'}`);
-    updateLocalStatusIcons();
+    updateLocalStatusIcons(); // This now handles the local placeholder too
      socket.emit('update_status', { videoOff: isCameraOff });
 };
 
 // --- Leave and Cleanup ---
 leaveBtn.onclick = () => {
     console.log("Leave button clicked");
-    cleanupAfterLeave(true); // Clean up and switch UI
+    cleanupAfterLeave(true);
 };
 
 function cleanupAfterLeave(switchToEntry = true) {
@@ -536,9 +549,7 @@ function cleanupAfterLeave(switchToEntry = true) {
                  peerConnections[peerId].ontrack = null;
                  peerConnections[peerId].oniceconnectionstatechange = null;
                  peerConnections[peerId].close();
-             } catch (e) {
-                 console.warn(`Error closing PC for ${peerId}: ${e}`);
-             }
+             } catch (e) { console.warn(`Error closing PC for ${peerId}: ${e}`); }
         }
     });
     peerConnections = {};
@@ -576,10 +587,11 @@ function cleanupAfterLeave(switchToEntry = true) {
      if (switchToEntry) {
         entrySection.style.display = 'flex';
         callSection.classList.add('hidden');
-        roomInput.value = '';
-        nameInput.value = ''; // Clear name input field too
+        if (roomInput) roomInput.value = '';
+        if (nameInput) nameInput.value = '';
      }
-     localParticipantNameSpan.textContent = 'You';
+     if(localParticipantNameSpan) localParticipantNameSpan.textContent = 'You'; // Reset local name display
+     if(localPlaceholder) localPlaceholder.classList.add('hidden'); // Ensure local placeholder hidden
 }
 
 function handleUserLeft(peerId) {
@@ -593,9 +605,7 @@ function handleUserLeft(peerId) {
              peerConnections[peerId].ontrack = null;
              peerConnections[peerId].oniceconnectionstatechange = null;
              peerConnections[peerId].close();
-         } catch (e) {
-             console.warn(`Error closing PC for left peer ${peerId}: ${e}`);
-         }
+         } catch (e) { console.warn(`Error closing PC for left peer ${peerId}: ${e}`); }
          delete peerConnections[peerId];
     }
 
@@ -628,7 +638,6 @@ messageInput.onkeypress = (e) => {
     }
 };
 
-// Correctly displays "Me: " for local messages
 function sendMessage() {
     const message = messageInput.value.trim();
     if (!message || !socket || !localUserName) return;
@@ -638,10 +647,9 @@ function sendMessage() {
     messageInput.value = '';
 }
 
-// Correctly displays received messages with sender's name
 function addChatMessage(message, type = 'system', senderId = null) {
     const messageElement = document.createElement('p');
-    messageElement.textContent = message; // Displays the full string passed ("Me: ..." or "SenderName: ...")
+    messageElement.textContent = message;
     messageElement.className = type;
     chatbox.appendChild(messageElement);
     chatbox.scrollTop = chatbox.scrollHeight;

@@ -24,10 +24,14 @@
          <!-- Video Grid -->
         <div id="videos-grid">
              <!-- Local video wrapper -->
-            <div class="video-wrapper" id="local-video-wrapper">
+             <div class="video-wrapper" id="local-video-wrapper">
                 <video id="localVideo" autoplay muted playsinline></video>
+                <!-- === Added Local Placeholder === -->
+                <div id="localPlaceholder" class="video-off-placeholder hidden">
+                    <i class="fas fa-user-slash"></i>
+                </div>
+                <!-- === End Added Placeholder === -->
                 <div class="video-info">
-                    <!-- === Participant name span (will be updated by JS) === -->
                     <span class="participant-name" id="localParticipantName">You</span>
                     <span class="status-icons">
                         <i id="local-mic-icon" class="fas fa-microphone icon-mic-on"></i>
