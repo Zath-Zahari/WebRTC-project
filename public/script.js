@@ -116,7 +116,13 @@ function connectSignalingServer() {
     if (socket && socket.connected) return;
     if (socket) socket.disconnect();
 
-    socket = io();
+    // *** Connect to the Deployed Render Backend URL ***
+    // Replace with your *actual* Render Web Service URL
+    const serverUrl = 'https://webrtc-signal-server.onrender.com';
+    console.log(`Connecting to signaling server at: ${serverUrl}`);
+    socket = io(serverUrl);
+    // ****************************************************
+
     setupSocketListeners();
 }
 
@@ -210,7 +216,7 @@ function setupSocketListeners() {
     });
 
     socket.on('peer_status_update', ({ peerId, status }) => {
-        // console.log(`Status update received from ${peerNames[peerId] || peerId}:`, status);
+        // console.log(`Status update received from ${peerNames[peerId] || peerId}:`, status); // Can be verbose
         updatePeerStatusIcons(peerId, status.muted, status.videoOff);
     });
 
@@ -240,10 +246,10 @@ function setupSocketListeners() {
 
      socket.on('connect_error', (err) => {
         console.error("Signaling connection error:", err);
-         if (!currentRoom) {
+         if (!currentRoom) { // Only show if not already in a room
              alert(`Could not connect to the signaling server: ${err.message}. Please check server status and refresh.`);
          }
-        cleanupAfterLeave(false);
+        cleanupAfterLeave(false); // Attempt cleanup if connection fails
     });
 
     socket.on('join_error', (errorMessage) => {
@@ -272,7 +278,7 @@ function createPeerConnection(peerId, isInitiator) {
 
     if (!localStream) {
         console.error("Local stream is not available when creating peer connection!");
-        return;
+        return; // Cannot proceed without local stream
     }
     localStream.getTracks().forEach(track => {
         try {
@@ -448,7 +454,7 @@ function createPeerVideoElement(peerId, peerName) {
 
 // Modified function to hide local camera icon when ON
 function updateLocalStatusIcons() {
-    if (!localStream || !localCamIcon) return; // Check elements exist
+    if (!localStream || !localCamIcon || !localMicIcon) return; // Check elements exist
 
     // Mic Icon Logic (Unchanged)
     if (isMuted) {
