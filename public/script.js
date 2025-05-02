@@ -1,118 +1,657 @@
-const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
-const path = require('path');
+// DOM Elements
+const entrySection = document.getElementById('entry-section');
+const nameInput = document.getElementById('nameInput'); // Get name input
+const roomInput = document.getElementById('roomInput');
+const joinBtn = document.getElementById('joinBtn');
 
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
+const callSection = document.getElementById('call-section');
+const videosGrid = document.getElementById('videos-grid');
+const localVideoWrapper = document.getElementById('local-video-wrapper');
+const localVideo = document.getElementById('localVideo');
+const localParticipantNameSpan = document.getElementById('localParticipantName'); // Get local name span
+const localMicIcon = document.getElementById('local-mic-icon');
+const localCamIcon = document.getElementById('local-cam-icon');
 
-const PORT = process.env.PORT || 3000;
+const controlsBar = document.getElementById('controls-bar');
+const muteBtn = document.getElementById('muteBtn');
+const cameraBtn = document.getElementById('cameraBtn');
+const leaveBtn = document.getElementById('leaveBtn');
+const toggleChatBtn = document.getElementById('toggleChatBtn');
+const currentRoomDisplay = document.getElementById('currentRoomDisplay'); // Get room display span
 
-app.use(express.static(path.join(__dirname, 'public')));
+const chatSidebar = document.getElementById('chat-sidebar');
+const closeChatBtn = document.getElementById('closeChatBtn');
+const chatbox = document.getElementById('chatbox');
+const messageInput = document.getElementById('messageInput');
+const sendBtn = document.getElementById('sendBtn');
 
-let rooms = {}; // { roomName: { socketId: { muted, videoOff, name }, ... } }
-let socketToRoom = {}; // { socketId: roomName }
+// State Variables
+let localStream;
+let socket;
+let currentRoom;
+let localUserName; // Store local user's name
+let peerConnections = {}; // { peerId: RTCPeerConnection }
+let peerMediaElements = {}; // { peerId: { video, micIcon, camIcon, wrapper, placeholder, nameSpan } }
+let peerNames = {}; // Store peerId -> name mapping
+let isMuted = false;
+let isCameraOff = false;
 
-io.on('connection', (socket) => {
-    console.log(`[Server] User connected: ${socket.id}`);
+// WebRTC Configuration
+const configuration = {
+    iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+    ]
+};
 
-    socket.on('join_room', (joinData) => {
-        const { roomName, userName } = joinData;
-        if (!roomName || !userName) {
-             console.error(`[Server join_room] Join attempt failed: Missing data from ${socket.id}`);
-             socket.emit('join_error', 'Missing room name or user name.');
-             return;
+// --- Initialization ---
+
+window.onload = () => {
+    console.log("Page loaded. Waiting for user to enter name and room.");
+    entrySection.style.display = 'flex';
+    callSection.classList.add('hidden');
+    disableCallControls();
+};
+
+// Assign Join Button click listener
+joinBtn.onclick = () => {
+    const roomName = roomInput.value.trim();
+    const userName = nameInput.value.trim();
+
+    if (!userName) {
+        alert("Please enter your name.");
+        return;
+    }
+    if (!roomName) {
+        alert("Please enter a room name.");
+        return;
+    }
+    if(currentRoom) {
+        alert("You are already in a room. Please leave before joining another.");
+        return;
+    }
+
+    localUserName = userName;
+    joinRoom(roomName);
+};
+
+// Function to join the room
+async function joinRoom(roomId) {
+    currentRoom = roomId;
+    console.log(`Attempting to join room: ${currentRoom} as ${localUserName}`);
+
+    try {
+        // 1. Get Local Media
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localVideo.srcObject = localStream;
+        localParticipantNameSpan.textContent = `${localUserName} (You)`; // Set local name display
+        updateLocalStatusIcons();
+        console.log("Local stream obtained");
+
+        // 2. Connect to Signaling Server
+        connectSignalingServer();
+
+        // 3. Update UI
+        entrySection.style.display = 'none';
+        callSection.classList.remove('hidden');
+        currentRoomDisplay.textContent = `Room: ${currentRoom}`;
+        enableCallControls();
+
+    } catch (error) {
+        console.error("Error starting call:", error);
+        alert("Could not start video/audio. Check permissions or hardware. Please refresh and try again.");
+        currentRoom = null;
+        localUserName = null;
+        entrySection.style.display = 'flex';
+        callSection.classList.add('hidden');
+        disableCallControls();
+    }
+}
+
+function connectSignalingServer() {
+    if (socket && socket.connected) return;
+    if (socket) socket.disconnect();
+
+    socket = io();
+    setupSocketListeners();
+}
+
+
+function enableCallControls() {
+    muteBtn.disabled = false;
+    cameraBtn.disabled = false;
+    leaveBtn.disabled = false;
+    toggleChatBtn.disabled = false;
+    messageInput.disabled = false;
+    sendBtn.disabled = false;
+    currentRoomDisplay.style.display = 'inline';
+}
+
+function disableCallControls() {
+    muteBtn.disabled = true;
+    cameraBtn.disabled = true;
+    leaveBtn.disabled = true;
+    toggleChatBtn.disabled = true;
+    messageInput.disabled = true;
+    sendBtn.disabled = true;
+    currentRoomDisplay.style.display = 'none';
+    currentRoomDisplay.textContent = '';
+}
+
+// --- Socket Event Handlers ---
+
+function setupSocketListeners() {
+    socket.on('connect', () => {
+        console.log(`Connected to signaling server with ID: ${socket.id}`);
+        if (currentRoom && localUserName) {
+             console.log(`Socket connected, emitting join_room for: ${currentRoom} as ${localUserName}`);
+            socket.emit('join_room', { roomName: currentRoom, userName: localUserName });
+        } else {
+            console.error("Cannot join room: currentRoom or localUserName is not set.");
+             // Maybe force a cleanup/redirect if state is inconsistent
+             cleanupAfterLeave(true);
+             alert("An error occurred. Please try entering your name and room again.");
         }
-        console.log(`[Server join_room] Socket ${socket.id} (${userName}) joining room ${roomName}`);
+    });
 
-        if (!rooms[roomName]) rooms[roomName] = {};
-        rooms[roomName][socket.id] = { muted: false, videoOff: false, name: userName };
-        socketToRoom[socket.id] = roomName;
-        socket.join(roomName);
+    socket.on('existing_peers', (peers) => { // peers is { peerId: { muted, videoOff, name }, ... }
+        console.log('Received existing peers:', peers);
+        Object.keys(peers).forEach(peerId => {
+            if (peerId !== socket.id) {
+                const peerInfo = peers[peerId];
+                peerNames[peerId] = peerInfo.name;
+                console.log(`Stored name for existing peer ${peerId}: ${peerInfo.name}`);
+                createPeerConnection(peerId, true);
+                setTimeout(() => updatePeerStatusIcons(peerId, peerInfo.muted, peerInfo.videoOff), 100);
+            }
+        });
+    });
 
-        const otherPeersInRoom = {};
-        for (const peerId in rooms[roomName]) {
-            if (peerId !== socket.id) otherPeersInRoom[peerId] = rooms[roomName][peerId];
+    socket.on('user_joined', (payload) => { // payload is { peerId, userName }
+        const { peerId, userName } = payload;
+        console.log(`User ${userName} (${peerId}) joined the room`);
+        if (!peerConnections[peerId]) {
+            peerNames[peerId] = userName;
+             console.log(`Stored name for new peer ${peerId}: ${userName}`);
+            createPeerConnection(peerId, false);
+            addChatMessage(`${userName} joined`, 'system');
+        } else {
+            console.log(`Peer connection already exists for ${peerId}, skipping creation.`);
+             if (!peerNames[peerId]) peerNames[peerId] = userName; // Ensure name is updated
+             // Also update the name displayed on the video tile if it exists but name was missing
+             const elements = peerMediaElements[peerId];
+             if (elements && elements.nameSpan) {
+                 elements.nameSpan.textContent = userName;
+             }
         }
-        console.log(`[Server join_room] Room ${roomName} members for ${socket.id}:`, Object.keys(otherPeersInRoom));
-
-        console.log(`[Server join_room] Emitting 'existing_peers' to ${socket.id}`);
-        socket.emit('existing_peers', otherPeersInRoom);
-
-        console.log(`[Server join_room] Broadcasting 'user_joined' to room ${roomName} for ${socket.id} (${userName})`);
-        socket.to(roomName).emit('user_joined', { peerId: socket.id, userName: userName });
     });
 
     socket.on('offer', (payload) => {
-        const senderName = rooms[socketToRoom[socket.id]]?.[socket.id]?.name || socket.id;
-        const targetName = rooms[socketToRoom[payload.target]]?.[payload.target]?.name || payload.target;
-        console.log(`[Server offer] Relaying offer from ${senderName} (${socket.id}) to ${targetName} (${payload.target})`);
-        io.to(payload.target).emit('offer', { sdp: payload.sdp, sender: socket.id });
+        console.log(`Offer received from ${payload.sender}`);
+        handleOffer(payload.sdp, payload.sender);
     });
 
     socket.on('answer', (payload) => {
-        const senderName = rooms[socketToRoom[socket.id]]?.[socket.id]?.name || socket.id;
-        const targetName = rooms[socketToRoom[payload.target]]?.[payload.target]?.name || payload.target;
-        console.log(`[Server answer] Relaying answer from ${senderName} (${socket.id}) to ${targetName} (${payload.target})`);
-        io.to(payload.target).emit('answer', { sdp: payload.sdp, sender: socket.id });
+        console.log(`Answer received from ${payload.sender}`);
+        handleAnswer(payload.sdp, payload.sender);
     });
 
     socket.on('ice_candidate', (payload) => {
-        const senderName = rooms[socketToRoom[socket.id]]?.[socket.id]?.name || socket.id;
-        const targetName = rooms[socketToRoom[payload.target]]?.[payload.target]?.name || payload.target;
-        // console.log(`[Server ice_candidate] Relaying candidate from ${senderName} (${socket.id}) to ${targetName} (${payload.target})`); // Verbose
-        io.to(payload.target).emit('ice_candidate', { candidate: payload.candidate, sender: socket.id });
+        handleIceCandidate(payload.candidate, payload.sender);
     });
 
-    socket.on('update_status', (statusUpdate) => {
-        const roomName = socketToRoom[socket.id];
-        if (roomName && rooms[roomName] && rooms[roomName][socket.id]) {
-            if (statusUpdate.muted !== undefined) rooms[roomName][socket.id].muted = statusUpdate.muted;
-            if (statusUpdate.videoOff !== undefined) rooms[roomName][socket.id].videoOff = statusUpdate.videoOff;
-            // console.log(`[Server update_status] Broadcasting status from ${socket.id} in ${roomName}:`, statusUpdate); // Verbose
-            socket.to(roomName).emit('peer_status_update', { peerId: socket.id, status: statusUpdate });
+    socket.on('peer_status_update', ({ peerId, status }) => {
+         console.log(`Status update received from ${peerId}:`, status);
+        updatePeerStatusIcons(peerId, status.muted, status.videoOff);
+    });
+
+
+    socket.on('user_left', (peerId) => {
+        const leavingUserName = peerNames[peerId] || `User ${peerId.substring(0, 6)}...`;
+        console.log(`${leavingUserName} (${peerId}) left the room`);
+        handleUserLeft(peerId);
+        addChatMessage(`${leavingUserName} left`, 'system');
+    });
+
+    socket.on('chat_message', (data) => { // data is { senderId, senderName, message }
+        console.log(`Chat message received from ${data.senderName} (${data.senderId}): ${data.message}`);
+        const messageType = data.senderId === socket.id ? 'my-message' : 'other-message';
+        addChatMessage(`${data.senderName}: ${data.message}`, messageType, data.senderId);
+    });
+
+    socket.on('disconnect', (reason) => {
+        console.error(`Disconnected from signaling server! Reason: ${reason}`);
+        if (currentRoom) {
+             alert("Lost connection to the server. Please refresh to rejoin.");
+        }
+        cleanupAfterLeave(false);
+    });
+
+     socket.on('connect_error', (err) => {
+        console.error("Signaling connection error:", err);
+         if (!currentRoom) {
+             alert(`Could not connect to the signaling server: ${err.message}. Please check server status and refresh.`);
+         }
+        cleanupAfterLeave(false);
+    });
+
+    socket.on('join_error', (errorMessage) => {
+        console.error("Server rejected join attempt:", errorMessage);
+        alert(`Could not join room: ${errorMessage}`);
+        // Reset state as join failed
+        currentRoom = null;
+        localUserName = null;
+        cleanupAfterLeave(true); // Go back to entry screen
+    });
+}
+
+
+// --- WebRTC Peer Connection Logic ---
+function createPeerConnection(peerId, isInitiator) {
+    console.log(`Creating PeerConnection for ${peerId}. Initiator: ${isInitiator}`);
+    if (peerConnections[peerId]) {
+        console.warn(`Peer connection for ${peerId} already exists.`);
+        return;
+    }
+
+    const peerName = peerNames[peerId] || `Peer ${peerId.substring(0, 6)}`;
+    createPeerVideoElement(peerId, peerName); // Create UI first
+
+    const peerConnection = new RTCPeerConnection(configuration);
+    peerConnections[peerId] = peerConnection;
+
+    // Add local tracks
+    if (!localStream) {
+        console.error("Local stream is not available when creating peer connection!");
+        return; // Cannot proceed without local stream
+    }
+    localStream.getTracks().forEach(track => {
+        try {
+            peerConnection.addTrack(track, localStream);
+        } catch (error) {
+            console.error(`Error adding ${track.kind} track for ${peerId}:`, error);
         }
     });
 
-    socket.on('chat_message', (message) => {
-        const roomName = socketToRoom[socket.id];
-        if (roomName && rooms[roomName] && rooms[roomName][socket.id]) {
-            const senderName = rooms[roomName][socket.id].name;
-            console.log(`[Server chat_message] Broadcasting chat from ${senderName} in ${roomName}`);
-            io.to(roomName).emit('chat_message', { senderId: socket.id, senderName: senderName, message: message });
-        }
-    });
-
-    const handleDisconnect = (reason) => {
-        const roomName = socketToRoom[socket.id];
-        if (roomName && rooms[roomName] && rooms[roomName][socket.id]) {
-            const leavingUserName = rooms[roomName][socket.id].name || socket.id;
-            console.log(`[Server handleDisconnect] User ${leavingUserName} (${socket.id}) left room ${roomName}. Reason: ${reason}`);
-            delete rooms[roomName][socket.id];
-            console.log(`[Server handleDisconnect] Broadcasting 'user_left' (${socket.id}) to room ${roomName}`);
-            socket.to(roomName).emit('user_left', socket.id);
-            if (Object.keys(rooms[roomName]).length === 0) {
-                console.log(`[Server handleDisconnect] Room ${roomName} is empty. Deleting.`);
-                delete rooms[roomName];
-            }
+    // Handle remote tracks
+    peerConnection.ontrack = (event) => {
+        console.log(`Track received from ${peerId}`, event.streams[0]);
+        const elements = peerMediaElements[peerId];
+        if (elements && elements.video) {
+             elements.video.srcObject = event.streams[0];
         } else {
-            console.log(`[Server handleDisconnect] User ${socket.id} disconnected (was not in a tracked room). Reason: ${reason}`);
+            console.warn(`Video element for peer ${peerId} not found when track received.`);
+             // Attempt to find/create it again maybe? Less ideal.
         }
-        delete socketToRoom[socket.id];
     };
 
-    socket.on('leave_room', () => handleDisconnect('explicit leave request'));
-    socket.on('disconnect', (reason) => handleDisconnect(reason));
+    // Handle ICE candidates
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            socket.emit('ice_candidate', { target: peerId, candidate: event.candidate });
+        }
+    };
 
-    socket.on('error', (error) => {
-        console.error(`[Server Socket Error] Error for ${socket.id}:`, error);
+    // Handle connection state changes
+    peerConnection.oniceconnectionstatechange = () => {
+        const state = peerConnection.iceConnectionState;
+        console.log(`ICE connection state for ${peerId} (${peerNames[peerId]}): ${state}`);
+        if (['failed', 'disconnected', 'closed'].includes(state)) {
+             console.warn(`Connection issue with ${peerId}. State: ${state}. Cleaning up.`);
+             handleUserLeft(peerId);
+        }
+    };
+
+    // Offer creation (only for initiator)
+    if (isInitiator) {
+        peerConnection.createOffer()
+            .then(offer => peerConnection.setLocalDescription(offer))
+            .then(() => {
+                console.log(`Sending offer to ${peerId}`);
+                socket.emit('offer', { target: peerId, sdp: peerConnection.localDescription });
+            })
+            .catch(e => console.error(`Error creating offer for ${peerId}:`, e));
+    }
+}
+
+
+// --- SDP and ICE Handling ---
+function handleOffer(sdp, senderId) {
+    let peerConnection = peerConnections[senderId];
+    const peerName = peerNames[senderId] || senderId;
+    if (!peerConnection) {
+        console.warn(`No PC for ${peerName} to handle offer. Creating.`);
+        createPeerConnection(senderId, false);
+        peerConnection = peerConnections[senderId];
+        if (!peerConnection) {
+            console.error(`Failed to create PC for offer handling for ${peerName}.`);
+            return;
+        }
+    }
+
+    // Check signaling state before processing offer
+    const readyState = peerConnection.signalingState;
+    if (readyState !== 'stable' && readyState !== 'have-remote-offer') {
+        console.warn(`PC for ${peerName} in invalid state (${readyState}) to handle offer. Possibly glare.`);
+        // Basic glare handling: If initiator ID is lower, maybe reject? More complex logic needed for robust glare handling.
+        // For now, we might just ignore or proceed carefully. Let's proceed but log warning.
+    }
+
+    console.log(`Processing offer from ${peerName} (${senderId})`);
+    peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+        .then(() => {
+            console.log(`Remote description (offer) set for ${peerName}`);
+            return peerConnection.createAnswer();
+        })
+        .then(answer => peerConnection.setLocalDescription(answer))
+        .then(() => {
+            console.log(`Sending answer to ${peerName}`);
+            socket.emit('answer', { target: senderId, sdp: peerConnection.localDescription });
+        })
+        .catch(e => console.error(`Error handling offer from ${peerName}:`, e));
+}
+
+function handleAnswer(sdp, senderId) {
+     const peerConnection = peerConnections[senderId];
+     const peerName = peerNames[senderId] || senderId;
+     if (!peerConnection) {
+        console.error(`No PC for ${peerName} to handle answer.`);
+        return;
+    }
+     const readyState = peerConnection.signalingState;
+     if(readyState !== 'have-local-offer'){
+         console.warn(`PC for ${peerName} not expecting answer (state: ${readyState}). Ignoring.`);
+         return;
+     }
+    console.log(`Processing answer from ${peerName} (${senderId})`);
+    peerConnection.setRemoteDescription(new RTCSessionDescription(sdp))
+        .then(() => {
+            console.log(`Remote description (answer) set for ${peerName}`);
+        })
+        .catch(e => console.error(`Error handling answer from ${peerName}:`, e));
+}
+
+async function handleIceCandidate(candidate, senderId) {
+    const peerConnection = peerConnections[senderId];
+    const peerName = peerNames[senderId] || senderId;
+     if (!peerConnection) {
+        console.warn(`No PC for ${peerName} to handle ICE candidate. Ignoring.`);
+        return;
+    }
+    if (peerConnection.signalingState === 'closed') {
+        console.warn(`PC for ${peerName} is closed. Ignoring ICE candidate.`);
+        return;
+    }
+    if (!candidate) {
+        console.log(`End of candidates signal received from ${peerName}`);
+        return;
+    }
+
+    try {
+        // console.log(`Adding ICE candidate from ${peerName}`); // Can be very verbose
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+        // Ignore common expected errors
+        if (!e.message.includes("Error processing ICE candidate") && !e.message.includes("Called in wrong state")) {
+             console.warn(`Error adding ICE candidate from ${peerName}: ${e.message}`);
+        }
+    }
+}
+
+
+// --- UI Updates and Element Creation ---
+function createPeerVideoElement(peerId, peerName) {
+    if (document.getElementById(`wrapper-${peerId}`)) return; // Already exists
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'video-wrapper';
+    wrapper.id = `wrapper-${peerId}`;
+
+    const video = document.createElement('video');
+    video.id = `video-${peerId}`;
+    video.autoplay = true;
+    video.playsInline = true;
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'video-info';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'participant-name';
+    nameSpan.textContent = peerName;
+    nameSpan.title = peerName; // Add tooltip for long names
+
+    const iconsSpan = document.createElement('span');
+    iconsSpan.className = 'status-icons';
+
+    const micIcon = document.createElement('i');
+    micIcon.id = `mic-${peerId}`;
+    micIcon.className = 'fas fa-microphone icon-mic-on';
+
+    const camIcon = document.createElement('i');
+    camIcon.id = `cam-${peerId}`;
+    camIcon.className = 'fas fa-video icon-cam-on';
+
+    const placeholder = document.createElement('div');
+    placeholder.className = 'video-off-placeholder hidden';
+    placeholder.innerHTML = '<i class="fas fa-user-slash"></i>';
+
+    iconsSpan.appendChild(micIcon);
+    iconsSpan.appendChild(camIcon);
+    infoDiv.appendChild(nameSpan);
+    infoDiv.appendChild(iconsSpan);
+
+    wrapper.appendChild(video);
+    wrapper.appendChild(placeholder);
+    wrapper.appendChild(infoDiv);
+    videosGrid.appendChild(wrapper);
+
+    peerMediaElements[peerId] = { video, micIcon, camIcon, wrapper, placeholder, nameSpan };
+}
+
+function updateLocalStatusIcons() {
+    if (!localStream) return;
+
+    if (isMuted) {
+        localMicIcon.className = 'fas fa-microphone-slash icon-mic-off';
+        muteBtn.classList.add('muted');
+        muteBtn.querySelector('span').textContent = 'Unmute';
+         muteBtn.querySelector('i').className = 'fas fa-microphone-slash';
+    } else {
+        localMicIcon.className = 'fas fa-microphone icon-mic-on';
+        muteBtn.classList.remove('muted');
+        muteBtn.querySelector('span').textContent = 'Mute';
+        muteBtn.querySelector('i').className = 'fas fa-microphone';
+    }
+
+    if (isCameraOff) {
+        localCamIcon.className = 'fas fa-video-slash icon-cam-off';
+        localVideo.classList.add('hidden');
+        cameraBtn.classList.add('video-off');
+        cameraBtn.querySelector('span').textContent = 'Cam On';
+        cameraBtn.querySelector('i').className = 'fas fa-video-slash';
+    } else {
+        localCamIcon.className = 'fas fa-video icon-cam-on';
+        localVideo.classList.remove('hidden');
+        cameraBtn.classList.remove('video-off');
+        cameraBtn.querySelector('span').textContent = 'Cam Off';
+        cameraBtn.querySelector('i').className = 'fas fa-video';
+    }
+}
+
+function updatePeerStatusIcons(peerId, isPeerMuted, isPeerVideoOff) {
+    const elements = peerMediaElements[peerId];
+    if (!elements) return;
+
+    if (isPeerMuted !== undefined) {
+         elements.micIcon.className = isPeerMuted
+            ? 'fas fa-microphone-slash icon-mic-off'
+            : 'fas fa-microphone icon-mic-on';
+    }
+
+     if (isPeerVideoOff !== undefined) {
+         elements.camIcon.className = isPeerVideoOff
+            ? 'fas fa-video-slash icon-cam-off'
+            : 'fas fa-video icon-cam-on';
+
+         if (isPeerVideoOff) {
+             elements.video.classList.add('hidden');
+             elements.placeholder.classList.remove('hidden');
+         } else {
+             elements.video.classList.remove('hidden');
+             elements.placeholder.classList.add('hidden');
+         }
+     }
+}
+
+
+// --- Media Controls Actions ---
+muteBtn.onclick = () => {
+    if (!localStream || !socket) return;
+    isMuted = !isMuted;
+    localStream.getAudioTracks().forEach(track => track.enabled = !isMuted);
+    console.log(`Audio ${!isMuted ? 'ENABLED' : 'MUTED'}`);
+    updateLocalStatusIcons();
+    socket.emit('update_status', { muted: isMuted });
+};
+
+cameraBtn.onclick = () => {
+    if (!localStream || !socket) return;
+    isCameraOff = !isCameraOff;
+    localStream.getVideoTracks().forEach(track => track.enabled = !isCameraOff);
+    console.log(`Video ${!isCameraOff ? 'ENABLED' : 'DISABLED'}`);
+    updateLocalStatusIcons();
+     socket.emit('update_status', { videoOff: isCameraOff });
+};
+
+// --- Leave and Cleanup ---
+leaveBtn.onclick = () => {
+    console.log("Leave button clicked");
+    cleanupAfterLeave(true); // Clean up and switch UI
+};
+
+function cleanupAfterLeave(switchToEntry = true) {
+    console.log("Cleaning up connections and media...");
+    // 1. Stop local media tracks
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+        localVideo.srcObject = null;
+    }
+
+    // 2. Close all peer connections
+    Object.keys(peerConnections).forEach(peerId => {
+        if(peerConnections[peerId]) {
+             peerConnections[peerId].onicecandidate = null;
+             peerConnections[peerId].ontrack = null;
+             peerConnections[peerId].oniceconnectionstatechange = null;
+             peerConnections[peerId].close();
+        }
     });
-});
+    peerConnections = {};
 
-// Fallback route (keep as before)
-app.get('*', (req, res) => { /* ... */ });
+    // 3. Clear remote video elements
+    Object.values(peerMediaElements).forEach(elements => {
+        if (elements.wrapper && elements.wrapper.parentNode) {
+            elements.wrapper.remove();
+        }
+    });
+    peerMediaElements = {};
 
-server.listen(PORT, () => {
-    console.log(`[Server] Signaling server listening on *:${PORT}`);
+    // 4. Disconnect socket
+    if (socket) {
+         // Remove all listeners before disconnecting to avoid errors on reconnect attempts
+         socket.off();
+         socket.disconnect();
+         socket = null;
+    }
+
+    // 5. Reset UI elements
+    disableCallControls();
+    chatbox.innerHTML = '';
+    if (chatSidebar.classList.contains('visible')) {
+         toggleChat();
+    }
+
+     // 6. Reset state variables
+     currentRoom = null;
+     localUserName = null;
+     peerNames = {};
+     isMuted = false;
+     isCameraOff = false;
+
+     // 7. Optionally switch back to entry UI
+     if (switchToEntry) {
+        entrySection.style.display = 'flex';
+        callSection.classList.add('hidden');
+        roomInput.value = '';
+        nameInput.value = ''; // Clear name input field too
+     }
+     // Reset local name display regardless
+     localParticipantNameSpan.textContent = 'You';
+}
+
+function handleUserLeft(peerId) {
+     const leavingUserName = peerNames[peerId] || `User ${peerId.substring(0, 6)}...`;
+     console.log(`Cleaning up connection for LEFT peer ${leavingUserName} (${peerId})`);
+
+    // Close PeerConnection
+    if (peerConnections[peerId]) {
+         peerConnections[peerId].onicecandidate = null;
+         peerConnections[peerId].ontrack = null;
+         peerConnections[peerId].oniceconnectionstatechange = null;
+         peerConnections[peerId].close();
+         delete peerConnections[peerId];
+    }
+
+    // Remove video element
+    const elements = peerMediaElements[peerId];
+    if (elements && elements.wrapper && elements.wrapper.parentNode) {
+        elements.wrapper.remove();
+        delete peerMediaElements[peerId];
+    }
+
+    // Remove name from local store
+    delete peerNames[peerId];
+}
+
+
+// --- Chat Functionality ---
+toggleChatBtn.onclick = toggleChat;
+closeChatBtn.onclick = toggleChat;
+
+function toggleChat() {
+    chatSidebar.classList.toggle('visible');
+    chatSidebar.classList.toggle('hidden');
+}
+
+sendBtn.onclick = sendMessage;
+messageInput.onkeypress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+    }
+};
+
+function sendMessage() {
+    const message = messageInput.value.trim();
+    if (!message || !socket || !localUserName) return;
+
+    addChatMessage(`Me: ${message}`, 'my-message');
+    socket.emit('chat_message', message);
+    messageInput.value = '';
+}
+
+function addChatMessage(message, type = 'system', senderId = null) {
+    const messageElement = document.createElement('p');
+    messageElement.textContent = message;
+    messageElement.className = type;
+    chatbox.appendChild(messageElement);
+    chatbox.scrollTop = chatbox.scrollHeight;
+}
+
+// Graceful shutdown attempt
+window.addEventListener('beforeunload', () => {
+     if (socket) {
+         socket.disconnect();
+     }
 });
