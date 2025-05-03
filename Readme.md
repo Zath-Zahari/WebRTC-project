@@ -20,12 +20,19 @@ This application demonstrates a real-time video/audio conferencing setup using W
 
 ## Project Structure
 webrtc-conference/
+
 ├── public/ # Static frontend files
+
 │ ├── index.html # Main HTML page
+
 │ ├── style.css # Styling
+
 │ └── script.js # Frontend WebRTC and UI logic
+
 ├── server.js # Node.js + Socket.IO Signaling Server
+
 ├── package.json # Node.js dependencies
+
 └── README.md # This file
 
 
